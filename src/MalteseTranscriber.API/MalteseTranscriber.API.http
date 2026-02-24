@@ -1,0 +1,6 @@
+@MalteseTranscriber.API_HostAddress = http://localhost:5121
+
+GET {{MalteseTranscriber.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
