@@ -1,8 +1,9 @@
 using dotenv.net;
+using MalteseTranscriber.API.Hubs;
+using MalteseTranscriber.API.Services;
 using MalteseTranscriber.Core.Interfaces;
 using MalteseTranscriber.Infrastructure;
 
-// Load .env from project root (two levels up from API)
 DotEnv.Load(options: new DotEnvOptions(
     envFilePaths: new[] { Path.Combine("..", "..", ".env") }));
 
@@ -12,11 +13,28 @@ builder.Configuration.AddEnvironmentVariables();
 var apiKey = builder.Configuration["OPENAI_API_KEY"]
     ?? throw new InvalidOperationException("OPENAI_API_KEY not set");
 
+// SignalR
+builder.Services.AddSignalR(opts =>
+{
+    opts.MaximumReceiveMessageSize = 1_048_576;
+    opts.EnableDetailedErrors = builder.Environment.IsDevelopment();
+});
+
 builder.Services.AddMemoryCache();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Use Fake in Development (free), Real in Production
+// CORS — AllowCredentials is required for SignalR
+builder.Services.AddCors(opts => opts.AddPolicy("Frontend", p =>
+    p.WithOrigins(
+        builder.Configuration["FRONTEND_URL"] ?? "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5000")
+     .AllowAnyHeader()
+     .AllowAnyMethod()
+     .AllowCredentials()));
+
+// Whisper + Translation: fake in dev, real in prod
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddScoped<IWhisperService, FakeWhisperService>();
@@ -38,26 +56,19 @@ else
     });
 }
 
+// Pipeline + Notifier
+builder.Services.AddScoped<ITranscriptionPipeline, TranscriptionPipeline>();
+builder.Services.AddSingleton<ITranscriptionNotifier, SignalRTranscriptionNotifier>();
+
 var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.UseCors("Frontend");
 
-// Phase 1 test endpoint — remove in Phase 2
-app.MapPost("/api/transcribe", async (
-    IFormFile audio,
-    IWhisperService whisper,
-    ITranslationService translator) =>
-{
-    using var ms = new MemoryStream();
-    await audio.CopyToAsync(ms);
-
-    var maltese = await whisper.TranscribeAsync(ms.ToArray());
-    var english = await translator.TranslateAsync(maltese, "test-session");
-
-    return Results.Ok(new { maltese, english });
-}).DisableAntiforgery();
-
+app.MapHub<TranscriptionHub>("/hubs/transcription");
 app.MapGet("/health", () => "OK");
 
 app.Run();
