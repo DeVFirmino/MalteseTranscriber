@@ -1,4 +1,5 @@
 using dotenv.net;
+using FluentValidation;
 using MalteseTranscriber.API.Hubs;
 using MalteseTranscriber.API.Services;
 using MalteseTranscriber.Core.Interfaces;
@@ -59,6 +60,9 @@ else
 // Pipeline + Notifier
 builder.Services.AddScoped<ITranscriptionPipeline, TranscriptionPipeline>();
 builder.Services.AddSingleton<ITranscriptionNotifier, SignalRTranscriptionNotifier>();
+
+// Validators
+builder.Services.AddValidatorsFromAssemblyContaining<MalteseTranscriber.Core.Validators.AudioChunkRequestValidator>();
 
 var app = builder.Build();
 
