@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maltese Transcriber</title>
+  <script src="https://unpkg.com/@microsoft/signalr@latest/dist/browser/signalr.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f3ee;
+      min-height: 100vh;
+      padding: 32px 20px;
+    }
+    h1 { color: #1b3a6b; margin-bottom: 4px; }
+    .subtitle { color: #6b7280; font-size: 14px; margin-bottom: 24px; }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 10px 22px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    button:disabled { opacity: 0.35; cursor: default; }
+    #btnStart { background: #2563eb; color: white; }
+    #btnStop  { background: #dc2626; color: white; }
+    #btnClear { background: #e5e7eb; color: #374151; }
+    #status {
+      font-size: 13px;
+      color: #6b7280;
+      padding: 4px 10px;
+      background: white;
+      border-radius: 20px;
+      border: 1px solid #e5e7eb;
+    }
+    #status.recording { color: #dc2626; border-color: #dc2626; }
+    #status.connecting { color: #d97706; border-color: #d97706; }
+
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .panel {
+      background: white;
+      border-radius: 10px;
+      padding: 18px;
+      min-height: 220px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .panel-header {
+      font-size: 13px;
+      font-weight: 700;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+    .panel-text {
+      font-size: 15px;
+      line-height: 1.7;
+      color: #111;
+      white-space: pre-wrap;
+    }
+    .panel-text:empty::before {
+      content: 'Waiting for audio...';
+      color: #d1d5db;
+      font-style: italic;
+    }
+
+    #log {
+      font-size: 11px;
+      color: #9ca3af;
+      font-family: monospace;
+      max-height: 100px;
+      overflow-y: auto;
+      background: white;
+      border-radius: 8px;
+      padding: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Maltese Transcriber</h1>
+  <p class="subtitle">Real-time speech transcription - Maltese to English</p>
+
+  <div class="controls">
+    <button id="btnStart">Start Recording</button>
+    <button id="btnStop" disabled>Stop</button>
+    <button id="btnClear">Clear</button>
+    <span id="status">Ready</span>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <div class="panel-header">Maltese (Original)</div>
+      <div id="textMaltese" class="panel-text"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">English (Translation)</div>
+      <div id="textEnglish" class="panel-text"></div>
+    </div>
+  </div>
+
+  <div id="log"></div>
+
+<script>
+const connection = new signalR.HubConnectionBuilder()
+  .withUrl('/hubs/transcription')
+  .withAutomaticReconnect()
+  .configureLogging(signalR.LogLevel.Warning)
+  .build();
+
+connection.on('OnMalteseTranscription', data => {
+  document.getElementById('textMaltese').textContent += data.text + ' ';
+  log('[' + data.chunkIndex + '] ' + data.text);
+});
+
+connection.on('OnEnglishTranslation', data => {
+  document.getElementById('textEnglish').textContent += data.translatedText + ' ';
+});
+
+connection.on('OnError', data => {
+  log('Error [chunk ' + data.chunkIndex + ']: ' + data.message);
+  setStatus('Error', 'error');
+});
+
+let cleanupFn = null;
+
+document.getElementById('btnStart').onclick = async () => {
+  try {
+    setStatus('Connecting...', 'connecting');
+    await connection.start();
+    log('SignalR connected: ' + connection.connectionId);
+
+    const sessionId = crypto.randomUUID();
+    await connection.invoke('StartSession', sessionId);
+    setStatus('Recording', 'recording');
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+      }
+    });
+
+    const ctx = new AudioContext({ sampleRate: 16000 });
+    const source = ctx.createMediaStreamSource(stream);
+    const processor = ctx.createScriptProcessor(4096, 1, 1);
+
+    let buffer = [];
+    let chunkIndex = 0;
+
+    processor.onaudioprocess = e => {
+      const float32 = e.inputBuffer.getChannelData(0);
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+      }
+
+      buffer.push(...int16);
+
+      if (buffer.length >= 48000) {
+        const chunk = new Int16Array(buffer.splice(0, 48000));
+        const bytes = new Uint8Array(chunk.buffer);
+        const base64 = btoa(String.fromCharCode(...bytes));
+        connection.invoke('SendAudioChunk', sessionId, base64, chunkIndex);
+        log('Chunk #' + chunkIndex + ' sent (' + bytes.length + ' bytes)');
+        chunkIndex++;
+      }
+    };
+
+    source.connect(processor);
+    processor.connect(ctx.destination);
+
+    cleanupFn = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      processor.disconnect();
+      source.disconnect();
+      await connection.invoke('EndSession', sessionId);
+      await connection.stop();
+    };
+
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStop').disabled = false;
+
+  } catch (err) {
+    setStatus('Error', '');
+    log(err.message);
+    console.error(err);
+  }
+};
+
+document.getElementById('btnStop').onclick = async () => {
+  await cleanupFn?.();
+  cleanupFn = null;
+  setStatus('Stopped', '');
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled = true;
+  log('Session ended.');
+};
+
+document.getElementById('btnClear').onclick = () => {
+  document.getElementById('textMaltese').textContent = '';
+  document.getElementById('textEnglish').textContent = '';
+  document.getElementById('log').innerHTML = '';
+};
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = cls || '';
+}
+
+function log(msg) {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  el.prepend(line);
+}
+</script>
+</body>
+</html>
