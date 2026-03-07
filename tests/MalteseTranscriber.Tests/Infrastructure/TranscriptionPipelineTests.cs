@@ -61,7 +61,7 @@ public class TranscriptionPipelineTests
         await _pipeline.ProcessChunkAsync("test-session", smallChunk, 0);
 
         // Assert — audio should be buffered but no transcription triggered
-        await _whisper.DidNotReceive().TranscribeAsync(Arg.Any<byte[]>(), Arg.Any<string>());
+        await _whisper.DidNotReceive().TranscribeAsync(Arg.Any<byte[]>());
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public class TranscriptionPipelineTests
         // Arrange
         await _pipeline.InitializeSessionAsync("test-session", "conn-1");
         var largeChunk = new byte[96_000]; // exactly the threshold
-        _whisper.TranscribeAsync(Arg.Any<byte[]>(), Arg.Any<string>())
+        _whisper.TranscribeAsync(Arg.Any<byte[]>())
             .Returns("Bonġu");
         _translator.TranslateAsync(Arg.Any<string>(), Arg.Any<string>())
             .Returns("Hello");
@@ -82,7 +82,7 @@ public class TranscriptionPipelineTests
         await Task.Delay(500);
 
         // Assert
-        await _whisper.Received(1).TranscribeAsync(Arg.Any<byte[]>(), "mt");
+        await _whisper.Received(1).TranscribeAsync(Arg.Any<byte[]>());
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public class TranscriptionPipelineTests
         await _pipeline.ProcessChunkAsync("nonexistent", chunk, 0);
 
         // Assert — nothing should happen
-        await _whisper.DidNotReceive().TranscribeAsync(Arg.Any<byte[]>(), Arg.Any<string>());
+        await _whisper.DidNotReceive().TranscribeAsync(Arg.Any<byte[]>());
         await _notifier.DidNotReceive().SendErrorAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>());
     }
 
@@ -105,7 +105,7 @@ public class TranscriptionPipelineTests
         // Arrange
         await _pipeline.InitializeSessionAsync("test-session", "conn-1");
         var largeChunk = new byte[96_000];
-        _whisper.TranscribeAsync(Arg.Any<byte[]>(), Arg.Any<string>())
+        _whisper.TranscribeAsync(Arg.Any<byte[]>())
             .Returns("Bonġu");
         _translator.TranslateAsync("Bonġu", "test-session")
             .Returns("Hello");
@@ -125,7 +125,7 @@ public class TranscriptionPipelineTests
         // Arrange
         await _pipeline.InitializeSessionAsync("test-session", "conn-1");
         var largeChunk = new byte[96_000];
-        _whisper.TranscribeAsync(Arg.Any<byte[]>(), Arg.Any<string>())
+        _whisper.TranscribeAsync(Arg.Any<byte[]>())
             .Returns<string>(x => throw new HttpRequestException("API timeout"));
 
         // Act
@@ -142,7 +142,7 @@ public class TranscriptionPipelineTests
         // Arrange
         await _pipeline.InitializeSessionAsync("test-session", "conn-1");
         var largeChunk = new byte[96_000];
-        _whisper.TranscribeAsync(Arg.Any<byte[]>(), Arg.Any<string>())
+        _whisper.TranscribeAsync(Arg.Any<byte[]>())
             .Returns("");
 
         // Act
@@ -179,7 +179,7 @@ public class TranscriptionPipelineTests
         for (int i = 0; i < chunk.Length; i++)
             chunk[i] = (byte)(i % 256);
 
-        _whisper.TranscribeAsync(Arg.Any<byte[]>(), Arg.Any<string>())
+        _whisper.TranscribeAsync(Arg.Any<byte[]>())
             .Returns("Bonġu");
         _translator.TranslateAsync(Arg.Any<string>(), Arg.Any<string>())
             .Returns("Hello");

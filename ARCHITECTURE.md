@@ -43,7 +43,7 @@ TranscriptionPipeline.ProcessChunkAsync()
 AudioConverter.PcmToWav()
        │
        ▼ WAV bytes
-IWhisperService.TranscribeAsync() ──► OpenAI Whisper (language: "mt")
+IWhisperService.TranscribeAsync() ──► OpenAI Whisper (auto-detect, prompt-guided)
        │
        ▼ Maltese text
 ITranscriptionNotifier.SendMalteseTranscriptionAsync() ──► client
