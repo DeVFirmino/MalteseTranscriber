@@ -72,7 +72,7 @@ public class TranscriptionPipeline : ITranscriptionPipeline
         {
             var wav = AudioConverter.PcmToWav(audio);
 
-            var maltese = await _whisper.TranscribeAsync(wav, "mt");
+            var maltese = await _whisper.TranscribeAsync(wav);
             if (string.IsNullOrWhiteSpace(maltese)) return;
 
             _logger.LogInformation("[{Chunk}] Maltese: {Text}", chunkIndex, maltese);

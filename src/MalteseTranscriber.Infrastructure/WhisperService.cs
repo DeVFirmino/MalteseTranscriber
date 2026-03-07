@@ -8,24 +8,29 @@ public class WhisperService : IWhisperService
 
     public WhisperService(HttpClient http) => _http = http;
 
-    public async Task<string> TranscribeAsync(byte[] wavBytes, string language = "mt")
+    public async Task<string> TranscribeAsync(byte[] wavBytes)
     {
         using var content = new MultipartFormDataContent();
 
         content.Add(new ByteArrayContent(wavBytes), "file", "audio.wav");
         content.Add(new StringContent("whisper-1"), "model");
-        content.Add(new StringContent(language), "language");
         content.Add(new StringContent("text"), "response_format");
 
-        // This prompt hint significantly improves Maltese character accuracy
+        // Prompt guides Whisper toward Maltese without the unsupported language param
         content.Add(
-            new StringContent("Maltese transcription. Include proper characters: ħ, għ, ċ, ż."),
+            new StringContent("This is Maltese (Malti) speech. Transcribe accurately including: ħ, għ, ċ, ż."),
             "prompt");
 
         var response = await _http.PostAsync(
             "https://api.openai.com/v1/audio/transcriptions", content);
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException(
+                $"Whisper API {(int)response.StatusCode}: {errorBody}");
+        }
+
         return (await response.Content.ReadAsStringAsync()).Trim();
     }
 }
