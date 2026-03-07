@@ -26,39 +26,69 @@ public class TranscriptionHub : Hub
 
     public async Task StartSession(string sessionId)
     {
-        var result = await _sessionValidator.ValidateAsync(new StartSessionRequest(sessionId));
-        if (!result.IsValid)
+        _logger.LogInformation("Hub: StartSession called with {SessionId} from {ConnectionId}",
+            sessionId, Context.ConnectionId);
+
+        try
         {
+            var result = await _sessionValidator.ValidateAsync(new StartSessionRequest(sessionId));
+            if (!result.IsValid)
+            {
+                var errors = string.Join("; ", result.Errors.Select(e => e.ErrorMessage));
+                _logger.LogWarning("Hub: validation failed for {SessionId}: {Errors}", sessionId, errors);
+                await Clients.Caller.SendAsync("OnError", new
+                {
+                    ChunkIndex = -1,
+                    Message = errors
+                });
+                return;
+            }
+
+            await Groups.AddToGroupAsync(Context.ConnectionId, sessionId);
+            await _pipeline.InitializeSessionAsync(sessionId, Context.ConnectionId);
+            _logger.LogInformation("Hub: session started {SessionId}", sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Hub: StartSession failed for {SessionId}", sessionId);
             await Clients.Caller.SendAsync("OnError", new
             {
                 ChunkIndex = -1,
-                Message = string.Join("; ", result.Errors.Select(e => e.ErrorMessage))
+                Message = $"Failed to start session: {ex.Message}"
             });
-            return;
         }
-
-        await Groups.AddToGroupAsync(Context.ConnectionId, sessionId);
-        await _pipeline.InitializeSessionAsync(sessionId, Context.ConnectionId);
-        _logger.LogInformation("Hub: session started {SessionId}", sessionId);
     }
 
     public async Task SendAudioChunk(string sessionId, string audioBase64, int chunkIndex)
     {
-        var result = await _chunkValidator.ValidateAsync(
-            new AudioChunkRequest(sessionId, audioBase64, chunkIndex));
-
-        if (!result.IsValid)
+        try
         {
+            var result = await _chunkValidator.ValidateAsync(
+                new AudioChunkRequest(sessionId, audioBase64, chunkIndex));
+
+            if (!result.IsValid)
+            {
+                await Clients.Caller.SendAsync("OnError", new
+                {
+                    ChunkIndex = chunkIndex,
+                    Message = string.Join("; ", result.Errors.Select(e => e.ErrorMessage))
+                });
+                return;
+            }
+
+            var bytes = Convert.FromBase64String(audioBase64);
+            await _pipeline.ProcessChunkAsync(sessionId, bytes, chunkIndex);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Hub: SendAudioChunk failed for {SessionId} chunk {ChunkIndex}",
+                sessionId, chunkIndex);
             await Clients.Caller.SendAsync("OnError", new
             {
                 ChunkIndex = chunkIndex,
-                Message = string.Join("; ", result.Errors.Select(e => e.ErrorMessage))
+                Message = $"Failed to process chunk: {ex.Message}"
             });
-            return;
         }
-
-        var bytes = Convert.FromBase64String(audioBase64);
-        await _pipeline.ProcessChunkAsync(sessionId, bytes, chunkIndex);
     }
 
     public async Task EndSession(string sessionId)

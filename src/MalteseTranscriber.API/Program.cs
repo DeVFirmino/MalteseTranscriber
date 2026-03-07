@@ -38,7 +38,7 @@ try
     builder.Services.AddSignalR(opts =>
     {
         opts.MaximumReceiveMessageSize = 1_048_576;
-        opts.EnableDetailedErrors = builder.Environment.IsDevelopment();
+        opts.EnableDetailedErrors = true;
     });
 
     builder.Services.AddMemoryCache();

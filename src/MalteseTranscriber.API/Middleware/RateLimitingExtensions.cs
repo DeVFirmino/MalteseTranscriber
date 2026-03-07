@@ -35,15 +35,16 @@ public static class RateLimitingExtensions
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst
                     }));
 
-            // SignalR connections: 5 new connections per minute per IP
+            // SignalR connections: 30 per minute per IP
+            // (negotiate + websocket upgrade = multiple requests per connection)
             opts.AddPolicy("signalr", context =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
-                        PermitLimit = 5,
+                        PermitLimit = 30,
                         Window = TimeSpan.FromMinutes(1),
-                        QueueLimit = 0
+                        QueueLimit = 2
                     }));
         });
 
