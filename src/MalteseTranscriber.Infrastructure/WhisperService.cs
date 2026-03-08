@@ -13,13 +13,11 @@ public class WhisperService : IWhisperService
         using var content = new MultipartFormDataContent();
 
         content.Add(new ByteArrayContent(wavBytes), "file", "audio.wav");
-        content.Add(new StringContent("whisper-1"), "model");
+        content.Add(new StringContent("gpt-4o-transcribe"), "model");
         content.Add(new StringContent("text"), "response_format");
 
-        // Prompt guides Whisper toward Maltese without the unsupported language param
-        content.Add(
-            new StringContent("This is Maltese (Malti) speech. Transcribe accurately including: ħ, għ, ċ, ż."),
-            "prompt");
+        // GPT-4o has better language understanding than whisper-1 for Maltese
+        content.Add(new StringContent("Transcribe this Maltese speech."), "prompt");
 
         var response = await _http.PostAsync(
             "https://api.openai.com/v1/audio/transcriptions", content);
