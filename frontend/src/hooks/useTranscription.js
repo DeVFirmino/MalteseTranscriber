@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5001';
 const SAMPLE_RATE = 16000;
 const SAMPLES_PER_CHUNK = 48000; // 3 seconds
 
