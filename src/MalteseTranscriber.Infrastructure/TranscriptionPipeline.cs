@@ -7,27 +7,32 @@ namespace MalteseTranscriber.Infrastructure;
 
 public class TranscriptionPipeline : ITranscriptionPipeline
 {
-    private readonly IWhisperService _whisper;
+    private readonly IStreamingTranscriptionService _transcription;
     private readonly ITranslationService _translator;
     private readonly ITranscriptionNotifier _notifier;
     private readonly IMemoryCache _cache;
     private readonly ILogger<TranscriptionPipeline> _logger;
 
+    /// <summary>
+    /// Tracks latest chunk index per session for notification ordering.
+    /// </summary>
+    private readonly Dictionary<string, int> _chunkIndex = new();
+
     public TranscriptionPipeline(
-        IWhisperService whisper,
+        IStreamingTranscriptionService transcription,
         ITranslationService translator,
         ITranscriptionNotifier notifier,
         IMemoryCache cache,
         ILogger<TranscriptionPipeline> logger)
     {
-        _whisper = whisper;
+        _transcription = transcription;
         _translator = translator;
         _notifier = notifier;
         _cache = cache;
         _logger = logger;
     }
 
-    public Task InitializeSessionAsync(string sessionId, string connectionId)
+    public async Task InitializeSessionAsync(string sessionId, string connectionId)
     {
         var session = new TranscriptionSession
         {
@@ -35,8 +40,12 @@ public class TranscriptionPipeline : ITranscriptionPipeline
             ConnectionId = connectionId
         };
         _cache.Set($"session:{sessionId}", session, TimeSpan.FromHours(2));
+        _chunkIndex[sessionId] = 0;
+
+        // Open persistent WebSocket to Speechmatics for this session
+        await _transcription.ConnectAsync(sessionId, OnTranscriptReceivedAsync);
+
         _logger.LogInformation("Session initialized: {SessionId}", sessionId);
-        return Task.CompletedTask;
     }
 
     public async Task ProcessChunkAsync(string sessionId, byte[] audioBytes, int chunkIndex)
@@ -48,55 +57,43 @@ public class TranscriptionPipeline : ITranscriptionPipeline
             return;
         }
 
-        session.AudioBuffer.AddRange(audioBytes);
+        _chunkIndex[sessionId] = chunkIndex;
 
-        if (session.AudioBuffer.Count < session.MinBytesForProcessing) return;
-
-        var audioToProcess = session.OverlapBuffer
-            .Concat(session.AudioBuffer.Take(session.MinBytesForProcessing))
-            .ToArray();
-
-        session.OverlapBuffer = audioToProcess
-            .TakeLast(session.OverlapBytes)
-            .ToArray();
-
-        session.AudioBuffer.RemoveRange(0, session.MinBytesForProcessing);
-
-        _ = Task.Run(() => TranscribeAndTranslateAsync(sessionId, audioToProcess, chunkIndex));
+        // Forward raw PCM directly — no buffering, no WAV conversion.
+        // Speechmatics handles its own audio context internally.
+        await _transcription.SendAudioAsync(sessionId, audioBytes);
     }
 
-    private async Task TranscribeAndTranslateAsync(
-        string sessionId, byte[] audio, int chunkIndex)
+    /// <summary>
+    /// Callback invoked by the streaming transcription service when a
+    /// finalized transcript arrives. Triggers translation and notification.
+    /// </summary>
+    private async Task OnTranscriptReceivedAsync(string sessionId, string malteseText)
     {
+        var chunkIndex = _chunkIndex.GetValueOrDefault(sessionId, 0);
+
         try
         {
-            var wav = AudioConverter.PcmToWav(audio);
+            _logger.LogInformation("[{Chunk}] Maltese: {Text}", chunkIndex, malteseText);
+            await _notifier.SendMalteseTranscriptionAsync(sessionId, chunkIndex, malteseText);
 
-            var maltese = await _whisper.TranscribeAsync(wav);
-            if (string.IsNullOrWhiteSpace(maltese)) return;
-
-            _logger.LogInformation("[{Chunk}] Maltese: {Text}", chunkIndex, maltese);
-
-            await _notifier.SendMalteseTranscriptionAsync(sessionId, chunkIndex, maltese);
-
-            var english = await _translator.TranslateAsync(maltese, sessionId);
-
+            var english = await _translator.TranslateAsync(malteseText, sessionId);
             _logger.LogInformation("[{Chunk}] English: {Text}", chunkIndex, english);
-
-            await _notifier.SendEnglishTranslationAsync(sessionId, chunkIndex, maltese, english);
+            await _notifier.SendEnglishTranslationAsync(sessionId, chunkIndex, malteseText, english);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing chunk {ChunkIndex}", chunkIndex);
+            _logger.LogError(ex, "Error in transcript callback for session {SessionId}", sessionId);
             await _notifier.SendErrorAsync(sessionId, chunkIndex, ex.Message);
         }
     }
 
-    public Task FinalizeSessionAsync(string sessionId)
+    public async Task FinalizeSessionAsync(string sessionId)
     {
+        await _transcription.DisconnectAsync(sessionId);
         _cache.Remove($"session:{sessionId}");
+        _chunkIndex.Remove(sessionId);
         _logger.LogInformation("Session finalized: {SessionId}", sessionId);
-        return Task.CompletedTask;
     }
 
     public Task CleanupConnectionAsync(string connectionId)
