@@ -7,6 +7,7 @@ const SAMPLES_PER_CHUNK = 48000; // 3 seconds
 
 export function useTranscription() {
   const [status, setStatus] = useState('idle');
+  const [processing, setProcessing] = useState(false);
   const [malteseLines, setMalteseLines] = useState([]);
   const [englishLines, setEnglishLines] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
@@ -26,6 +27,7 @@ export function useTranscription() {
         .build();
 
       connection.on('OnMalteseTranscription', (data) => {
+        setProcessing(false);
         setMalteseLines((prev) => [...prev, data.text]);
       });
 
@@ -34,7 +36,15 @@ export function useTranscription() {
       });
 
       connection.on('OnError', (data) => {
+        setProcessing(false);
         setErrorMsg(data.message);
+      });
+
+      connection.onreconnecting(() => setStatus('reconnecting'));
+      connection.onreconnected(() => setStatus('recording'));
+      connection.onclose(() => {
+        setStatus('idle');
+        setProcessing(false);
       });
 
       await connection.start();
@@ -74,6 +84,7 @@ export function useTranscription() {
           const bytes = new Uint8Array(chunk.buffer);
           const base64 = btoa(String.fromCharCode(...bytes));
           connection.invoke('SendAudioChunk', sessionId, base64, chunkIndex);
+          setProcessing(true);
           chunkIndex++;
         }
       };
@@ -101,9 +112,11 @@ export function useTranscription() {
       cleanupRef.current = null;
       connectionRef.current = null;
       setStatus('idle');
+      setProcessing(false);
     } catch (err) {
       setErrorMsg(err.message);
       setStatus('idle');
+      setProcessing(false);
     }
   }, []);
 
@@ -113,5 +126,5 @@ export function useTranscription() {
     setErrorMsg('');
   }, []);
 
-  return { status, malteseLines, englishLines, errorMsg, start, stop, clear };
+  return { status, processing, malteseLines, englishLines, errorMsg, start, stop, clear };
 }

@@ -4,11 +4,12 @@ import { TranscriptPanel } from './components/TranscriptPanel';
 import { StatusBadge } from './components/StatusBadge';
 
 function App() {
-  const { status, malteseLines, englishLines, errorMsg, start, stop, clear } =
+  const { status, processing, malteseLines, englishLines, errorMsg, start, stop, clear } =
     useTranscription();
 
   const isRecording = status === 'recording';
   const isConnecting = status === 'connecting';
+  const isReconnecting = status === 'reconnecting';
 
   return (
     <div className="app">
@@ -21,7 +22,7 @@ function App() {
         <button
           className="btn btn-start"
           onClick={start}
-          disabled={isRecording || isConnecting}
+          disabled={isRecording || isConnecting || isReconnecting}
           aria-label="Start recording"
         >
           Start Recording
@@ -29,7 +30,7 @@ function App() {
         <button
           className="btn btn-stop"
           onClick={stop}
-          disabled={!isRecording}
+          disabled={!isRecording && !isReconnecting}
           aria-label="Stop recording"
         >
           Stop
@@ -47,6 +48,12 @@ function App() {
       {errorMsg && (
         <div className="error-banner" role="alert">
           {errorMsg}
+        </div>
+      )}
+
+      {processing && (
+        <div className="processing-indicator" aria-live="polite">
+          Processing audio...
         </div>
       )}
 

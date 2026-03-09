@@ -78,6 +78,11 @@
   border-color: var(--orange);
 }
 
+.status-reconnecting {
+  color: var(--orange);
+  border-color: var(--orange);
+}
+
 .status-error {
   color: var(--red);
   border-color: var(--red);
@@ -92,6 +97,31 @@
   border: 1px solid #fecaca;
   margin-bottom: 16px;
   font-size: 0.875rem;
+}
+
+/* Processing Indicator */
+.processing-indicator {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  padding: 6px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.processing-indicator::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--orange);
+  border-radius: 50%;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 /* Panels */

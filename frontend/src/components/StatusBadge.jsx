@@ -3,6 +3,7 @@ export function StatusBadge({ status }) {
     idle: 'Ready',
     connecting: 'Connecting...',
     recording: 'Recording',
+    reconnecting: 'Reconnecting...',
     error: 'Error',
   };
 
