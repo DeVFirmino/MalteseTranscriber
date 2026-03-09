@@ -10,7 +10,7 @@ namespace MalteseTranscriber.Tests.Infrastructure;
 
 public class TranscriptionPipelineTests
 {
-    private readonly IWhisperService _whisper = Substitute.For<IWhisperService>();
+    private readonly IStreamingTranscriptionService _transcription = Substitute.For<IStreamingTranscriptionService>();
     private readonly ITranslationService _translator = Substitute.For<ITranslationService>();
     private readonly ITranscriptionNotifier _notifier = Substitute.For<ITranscriptionNotifier>();
     private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
@@ -19,7 +19,7 @@ public class TranscriptionPipelineTests
 
     public TranscriptionPipelineTests()
     {
-        _pipeline = new TranscriptionPipeline(_whisper, _translator, _notifier, _cache, _logger);
+        _pipeline = new TranscriptionPipeline(_transcription, _translator, _notifier, _cache, _logger);
     }
 
     [Fact]
@@ -39,124 +39,46 @@ public class TranscriptionPipelineTests
     }
 
     [Fact]
-    public async Task InitializeSessionAsync_Should_CreateEmptyBuffers_When_NewSession()
+    public async Task InitializeSessionAsync_Should_ConnectTranscription_When_Called()
     {
         // Arrange & Act
         await _pipeline.InitializeSessionAsync("test-session", "conn-1");
 
-        // Assert
-        var session = _cache.Get<TranscriptionSession>("session:test-session");
-        session!.AudioBuffer.Should().BeEmpty();
-        session.OverlapBuffer.Should().BeEmpty();
+        // Assert — streaming service should be connected with a callback
+        await _transcription.Received(1).ConnectAsync(
+            "test-session", Arg.Any<Func<string, string, Task>>());
     }
 
     [Fact]
-    public async Task ProcessChunkAsync_Should_BufferAudio_When_BelowMinimumThreshold()
+    public async Task ProcessChunkAsync_Should_ForwardAudioToService_When_SessionExists()
     {
         // Arrange
         await _pipeline.InitializeSessionAsync("test-session", "conn-1");
-        var smallChunk = new byte[1000]; // well below 96,000 byte threshold
+        var audioChunk = new byte[48_000];
 
         // Act
-        await _pipeline.ProcessChunkAsync("test-session", smallChunk, 0);
+        await _pipeline.ProcessChunkAsync("test-session", audioChunk, 0);
 
-        // Assert — audio should be buffered but no transcription triggered
-        await _whisper.DidNotReceive().TranscribeAsync(Arg.Any<byte[]>());
-    }
-
-    [Fact]
-    public async Task ProcessChunkAsync_Should_TriggerTranscription_When_BufferReachesThreshold()
-    {
-        // Arrange
-        await _pipeline.InitializeSessionAsync("test-session", "conn-1");
-        var largeChunk = new byte[96_000]; // exactly the threshold
-        _whisper.TranscribeAsync(Arg.Any<byte[]>())
-            .Returns("Bonġu");
-        _translator.TranslateAsync(Arg.Any<string>(), Arg.Any<string>())
-            .Returns("Hello");
-
-        // Act
-        await _pipeline.ProcessChunkAsync("test-session", largeChunk, 0);
-
-        // Allow background Task.Run to complete
-        await Task.Delay(500);
-
-        // Assert
-        await _whisper.Received(1).TranscribeAsync(Arg.Any<byte[]>());
+        // Assert — audio should be forwarded directly, no buffering
+        await _transcription.Received(1).SendAudioAsync("test-session", audioChunk);
     }
 
     [Fact]
     public async Task ProcessChunkAsync_Should_ReturnSilently_When_SessionNotFound()
     {
         // Arrange — no session initialized
-        var chunk = new byte[100_000];
+        var chunk = new byte[48_000];
 
         // Act
         await _pipeline.ProcessChunkAsync("nonexistent", chunk, 0);
 
-        // Assert — nothing should happen
-        await _whisper.DidNotReceive().TranscribeAsync(Arg.Any<byte[]>());
-        await _notifier.DidNotReceive().SendErrorAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>());
+        // Assert — nothing should be forwarded
+        await _transcription.DidNotReceive().SendAudioAsync(
+            Arg.Any<string>(), Arg.Any<byte[]>());
     }
 
     [Fact]
-    public async Task ProcessChunkAsync_Should_SendMalteseAndEnglish_When_TranscriptionSucceeds()
-    {
-        // Arrange
-        await _pipeline.InitializeSessionAsync("test-session", "conn-1");
-        var largeChunk = new byte[96_000];
-        _whisper.TranscribeAsync(Arg.Any<byte[]>())
-            .Returns("Bonġu");
-        _translator.TranslateAsync("Bonġu", "test-session")
-            .Returns("Hello");
-
-        // Act
-        await _pipeline.ProcessChunkAsync("test-session", largeChunk, 0);
-        await Task.Delay(500);
-
-        // Assert
-        await _notifier.Received(1).SendMalteseTranscriptionAsync("test-session", 0, "Bonġu");
-        await _notifier.Received(1).SendEnglishTranslationAsync("test-session", 0, "Bonġu", "Hello");
-    }
-
-    [Fact]
-    public async Task ProcessChunkAsync_Should_SendError_When_WhisperThrows()
-    {
-        // Arrange
-        await _pipeline.InitializeSessionAsync("test-session", "conn-1");
-        var largeChunk = new byte[96_000];
-        _whisper.TranscribeAsync(Arg.Any<byte[]>())
-            .Returns<string>(x => throw new HttpRequestException("API timeout"));
-
-        // Act
-        await _pipeline.ProcessChunkAsync("test-session", largeChunk, 0);
-        await Task.Delay(500);
-
-        // Assert
-        await _notifier.Received(1).SendErrorAsync("test-session", 0, "API timeout");
-    }
-
-    [Fact]
-    public async Task ProcessChunkAsync_Should_SkipTranslation_When_WhisperReturnsEmpty()
-    {
-        // Arrange
-        await _pipeline.InitializeSessionAsync("test-session", "conn-1");
-        var largeChunk = new byte[96_000];
-        _whisper.TranscribeAsync(Arg.Any<byte[]>())
-            .Returns("");
-
-        // Act
-        await _pipeline.ProcessChunkAsync("test-session", largeChunk, 0);
-        await Task.Delay(500);
-
-        // Assert — translation should not be called
-        await _translator.DidNotReceive().TranslateAsync(Arg.Any<string>(), Arg.Any<string>());
-        await _notifier.DidNotReceive().SendMalteseTranscriptionAsync(
-            Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>());
-    }
-
-    [Fact]
-    public async Task FinalizeSessionAsync_Should_RemoveSessionFromCache_When_Called()
+    public async Task FinalizeSessionAsync_Should_DisconnectAndRemoveSession_When_Called()
     {
         // Arrange
         await _pipeline.InitializeSessionAsync("test-session", "conn-1");
@@ -165,31 +87,20 @@ public class TranscriptionPipelineTests
         await _pipeline.FinalizeSessionAsync("test-session");
 
         // Assert
+        await _transcription.Received(1).DisconnectAsync("test-session");
         var session = _cache.Get<TranscriptionSession>("session:test-session");
         session.Should().BeNull();
     }
 
     [Fact]
-    public async Task ProcessChunkAsync_Should_MaintainOverlapBuffer_When_Processing()
+    public async Task FinalizeSessionAsync_Should_NotThrow_When_SessionAlreadyFinalized()
     {
-        // Arrange
-        await _pipeline.InitializeSessionAsync("test-session", "conn-1");
-        // Fill with recognizable data
-        var chunk = new byte[96_000];
-        for (int i = 0; i < chunk.Length; i++)
-            chunk[i] = (byte)(i % 256);
-
-        _whisper.TranscribeAsync(Arg.Any<byte[]>())
-            .Returns("Bonġu");
-        _translator.TranslateAsync(Arg.Any<string>(), Arg.Any<string>())
-            .Returns("Hello");
+        // Arrange — no session
 
         // Act
-        await _pipeline.ProcessChunkAsync("test-session", chunk, 0);
-        await Task.Delay(500);
+        var act = () => _pipeline.FinalizeSessionAsync("nonexistent");
 
-        // Assert — overlap buffer should be 16,000 bytes (last 16KB of processed audio)
-        var session = _cache.Get<TranscriptionSession>("session:test-session");
-        session!.OverlapBuffer.Length.Should().Be(16_000);
+        // Assert
+        await act.Should().NotThrowAsync();
     }
 }
