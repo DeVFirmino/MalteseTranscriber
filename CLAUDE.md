@@ -15,10 +15,12 @@ Clean Architecture with 3 layers:
 
 Key decisions:
 - `ITranscriptionNotifier` defined in Core to break circular dependency (Infrastructure needs to push to SignalR clients in API)
-- `FakeWhisperService` + `FakeTranslationService` used in Development mode (no OpenAI API costs)
-- Real `WhisperService` + `TranslationService` used in Production mode (requires OPENAI_API_KEY)
-- Audio format: PCM 16kHz/16-bit/mono, 3-second chunks (96KB), 500ms overlap buffer (16KB)
+- **Speechmatics** real-time WebSocket for Maltese transcription (96% accuracy); code under `Infrastructure/Speechmatics/`
+- `FakeStreamingTranscriptionService` + `FakeTranslationService` used in Development mode (no API costs)
+- Real `SpeechmaticsService` + `TranslationService` used in Production mode (requires SPEECHMATICS_API_KEY + OPENAI_API_KEY)
+- Audio format: PCM 16kHz/16-bit/mono, streamed directly to Speechmatics (no buffering/WAV conversion)
 - SignalR hub at `/hubs/transcription` with events: OnMalteseTranscription, OnEnglishTranslation, OnError
+- Legacy `IWhisperService`/`WhisperService` retained for future fallback to gpt-4o-transcribe
 
 ## Testing
 - xUnit + FluentAssertions + NSubstitute
@@ -29,13 +31,13 @@ Key decisions:
 - Currently 49 tests passing
 
 ## Commands
-- Backend: `cd src/MalteseTranscriber.API && dotnet run` (port 5000)
+- Backend: `cd src/MalteseTranscriber.API && dotnet run` (port 5001)
 - Frontend: `cd frontend && npm run dev` (port 5173)
 - Tests: `dotnet test`
 - Docker: `docker build -t maltese-transcriber .`
 
 ## Tech Stack
-.NET 10 (RC), SignalR, OpenAI Whisper + GPT-4o, React 19 + Vite 7, FluentValidation, Serilog, Docker
+.NET 10 (RC), SignalR, Speechmatics (Maltese ASR) + OpenAI GPT-4o (translation), React 19 + Vite 7, FluentValidation, Serilog, Docker
 
 ## User Preferences
 - User speaks Portuguese — may give instructions in Portuguese

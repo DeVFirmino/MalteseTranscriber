@@ -10,8 +10,8 @@
 │  (depends on Core + Infrastructure)              │
 ├─────────────────────────────────────────────────┤
 │              Infrastructure Layer                │
-│  WhisperService, TranslationService,             │
-│  TranscriptionPipeline, AudioConverter           │
+│  Speechmatics/SpeechmaticsService,               │
+│  TranslationService, TranscriptionPipeline       │
 │  (depends on Core only)                          │
 ├─────────────────────────────────────────────────┤
 │                 Core Layer                        │
@@ -36,17 +36,16 @@ SignalR WebSocket ──► TranscriptionHub.SendAudioChunk()
        ▼ validates via FluentValidation
 TranscriptionPipeline.ProcessChunkAsync()
        │
-       ├─ buffers audio until >= 96,000 bytes (3 seconds)
-       ├─ prepends 16,000 bytes overlap from previous chunk
+       ▼ raw PCM bytes (no buffering, no WAV conversion)
+IStreamingTranscriptionService.SendAudioAsync()
        │
-       ▼ PCM → WAV (44-byte header)
-AudioConverter.PcmToWav()
+       ▼ binary WebSocket frame
+Speechmatics WSS (wss://eu.rt.speechmatics.com/v2)
        │
-       ▼ WAV bytes
-IWhisperService.TranscribeAsync() ──► OpenAI Whisper (auto-detect, prompt-guided)
+       ▼ AddTranscript event (async callback)
+Pipeline.OnTranscriptReceivedAsync()
        │
-       ▼ Maltese text
-ITranscriptionNotifier.SendMalteseTranscriptionAsync() ──► client
+       ├──► ITranscriptionNotifier.SendMalteseTranscriptionAsync() ──► client
        │
        ▼ Maltese text
 ITranslationService.TranslateAsync() ──► OpenAI GPT-4o
@@ -57,6 +56,17 @@ ITranscriptionNotifier.SendEnglishTranslationAsync() ──► client
 
 ## Key Design Decisions
 
+### Speechmatics Real-Time WebSocket (replacing OpenAI Whisper)
+Speechmatics provides 96% accuracy for Maltese (3.1% WER). Uses a persistent WebSocket per session instead of HTTP POST per chunk. Audio is streamed directly as raw PCM — no buffering or WAV conversion needed. Transcripts arrive asynchronously via `AddTranscript` messages.
+
+Code is organized under `Infrastructure/Speechmatics/`:
+- **SpeechmaticsService** — manages WebSocket connections per session
+- **SpeechmaticsConnection** — encapsulates per-session socket state
+- **SpeechmaticsMessageHandler** — parses incoming messages and fires callbacks
+
+### IStreamingTranscriptionService (Core interface)
+Streaming contract with `ConnectAsync`, `SendAudioAsync`, `DisconnectAsync`. The `onTranscript` callback is registered at connect time and fired when finalized transcripts arrive. This decouples the pipeline from any specific transcription provider.
+
 ### ITranscriptionNotifier (breaking circular dependency)
 `TranscriptionPipeline` (Infrastructure) needs to push results to SignalR clients (API layer). Directly referencing `IHubContext<TranscriptionHub>` would create Infrastructure → API dependency. Instead:
 - `ITranscriptionNotifier` is defined in **Core**
@@ -64,16 +74,13 @@ ITranscriptionNotifier.SendEnglishTranslationAsync() ──► client
 - `TranscriptionPipeline` depends only on the Core interface
 
 ### Fake Services for Development
-In Development mode, `FakeWhisperService` and `FakeTranslationService` replace real OpenAI calls. This allows full end-to-end testing without API costs. Swap is controlled by `ASPNETCORE_ENVIRONMENT` in `.env`.
-
-### Audio Overlap Buffer
-Speech chunks are split every 3 seconds at arbitrary byte boundaries, which can cut words in half. A 500ms overlap (16,000 bytes) is prepended from the previous chunk to give Whisper context across boundaries.
+In Development mode, `FakeStreamingTranscriptionService` and `FakeTranslationService` replace real API calls. This allows full end-to-end testing without API costs. Swap is controlled by `ASPNETCORE_ENVIRONMENT` in `.env`.
 
 ### FluentValidation on SignalR Hub
 Hub methods validate input via `IValidator<T>` before processing. Invalid requests get an `OnError` event sent back to the caller instead of throwing exceptions.
 
-### Fire-and-Forget Transcription
-`ProcessChunkAsync` triggers transcription via `Task.Run()` so the Hub method returns immediately. The client gets results asynchronously via SignalR events. Errors are caught and sent via `OnError`.
+### Legacy Files (retained for fallback)
+`IWhisperService`, `WhisperService`, `FakeWhisperService`, and `AudioConverter` are kept in the codebase but no longer in the active code path. They will be used for a future fallback architecture (Speechmatics fails → fall back to gpt-4o-transcribe).
 
 ## Middleware Pipeline
 
@@ -95,16 +102,34 @@ Order in `Program.cs` (executed top-to-bottom for requests):
 |--------|------|-------|--------|-----------|-----------|
 | `global` | Fixed Window | 100 req | 1 min | IP address | All endpoints |
 | `transcription` | Sliding Window | 20 req | 1 min (4 segments) | IP address | Transcription endpoints |
-| `signalr` | Fixed Window | 5 conn | 1 min | IP address | `/hubs/transcription` |
+| `signalr` | Fixed Window | 30 conn | 1 min | IP address | `/hubs/transcription` |
 
 ## Session Lifecycle
 
 ```
 1. Client connects WebSocket → Hub.OnConnectedAsync()
-2. Client calls StartSession(sessionId) → validates → adds to group → caches TranscriptionSession
-3. Client streams SendAudioChunk(sessionId, base64, index) → validates → buffers → processes
-4. Client calls EndSession(sessionId) → removes cache → leaves group
-5. On disconnect → Hub.OnDisconnectedAsync() → cleanup
+2. Client calls StartSession(sessionId) → validates → adds to group → caches session → opens Speechmatics WSS
+3. Client streams SendAudioChunk(sessionId, base64, index) → validates → forwards PCM to Speechmatics
+4. Speechmatics sends AddTranscript → callback → notify Maltese → translate → notify English
+5. Client calls EndSession(sessionId) → sends EndOfStream to Speechmatics → disconnects WSS → removes cache
+6. On disconnect → Hub.OnDisconnectedAsync() → cleanup
 ```
 
 Sessions are cached with a 2-hour sliding expiration via `IMemoryCache`.
+
+## Environment Variables
+
+| Variable | Required | Used By |
+|----------|----------|---------|
+| `SPEECHMATICS_API_KEY` | Production | SpeechmaticsService (Maltese transcription) |
+| `OPENAI_API_KEY` | Production | TranslationService (GPT-4o Maltese→English) |
+| `ASPNETCORE_ENVIRONMENT` | Always | Determines fake vs real services |
+| `FRONTEND_URL` | Optional | CORS origin override |
+
+## Future Enhancements
+
+### Rate Limiting for Speechmatics API
+Add ASP.NET Core rate limiting middleware ([docs](https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit?view=aspnetcore-9.0)) to control Speechmatics API usage. Important for deployed portfolio project to prevent abuse.
+
+### Fallback Architecture
+If Speechmatics fails (connection error, timeout, API down), automatically fall back to `gpt-4o-transcribe` via the existing `WhisperService`. Pattern: `ResilientTranscriptionService` wrapping both providers with circuit breaker logic.
