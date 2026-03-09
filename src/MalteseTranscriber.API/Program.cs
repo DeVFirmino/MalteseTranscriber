@@ -5,6 +5,7 @@ using MalteseTranscriber.API.Middleware;
 using MalteseTranscriber.API.Services;
 using MalteseTranscriber.Core.Interfaces;
 using MalteseTranscriber.Infrastructure;
+using MalteseTranscriber.Infrastructure.Speechmatics;
 using Serilog;
 
 // Bootstrap logger for startup errors
@@ -58,21 +59,20 @@ try
          .AllowAnyMethod()
          .AllowCredentials()));
 
-    // Whisper + Translation: fake in dev, real in prod
+    // Transcription + Translation: fake in dev, real in prod
     if (builder.Environment.IsDevelopment())
     {
-        builder.Services.AddScoped<IWhisperService, FakeWhisperService>();
+        builder.Services.AddSingleton<IStreamingTranscriptionService, FakeStreamingTranscriptionService>();
         builder.Services.AddScoped<ITranslationService, FakeTranslationService>();
     }
     else
     {
-        builder.Services.AddHttpClient<IWhisperService, WhisperService>(c =>
-        {
-            c.DefaultRequestHeaders.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-            c.Timeout = TimeSpan.FromSeconds(30);
-        });
+        // Speechmatics real-time WebSocket for Maltese transcription
+        var speechmaticsKey = builder.Configuration["SPEECHMATICS_API_KEY"]
+            ?? throw new InvalidOperationException("SPEECHMATICS_API_KEY not set");
+        builder.Services.AddSingleton<IStreamingTranscriptionService, SpeechmaticsService>();
 
+        // OpenAI GPT-4o for Maltese → English translation
         builder.Services.AddHttpClient<ITranslationService, TranslationService>(c =>
         {
             c.DefaultRequestHeaders.Authorization =
