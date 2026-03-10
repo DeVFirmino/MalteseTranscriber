@@ -23,6 +23,7 @@ public static class ApplicationExtensions
             p.WithOrigins(
                 configuration["FRONTEND_URL"] ?? "http://localhost:3000",
                 "http://localhost:5173",
+                "http://localhost:8080",
                 "http://localhost:5001")
              .AllowAnyHeader()
              .AllowAnyMethod()
