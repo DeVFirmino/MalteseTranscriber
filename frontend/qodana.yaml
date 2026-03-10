@@ -1,7 +1,6 @@
 version: "1.0"
 linter: jetbrains/qodana-js:latest
 projectDir: .
-ide: QDJS
 
 profile:
   name: qodana.recommended
