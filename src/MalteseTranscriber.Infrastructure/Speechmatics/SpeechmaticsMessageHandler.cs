@@ -1,5 +1,5 @@
 using System.Text.Json;
-using MalteseTranscriber.Core.Models;
+using MalteseTranscriber.Infrastructure.Speechmatics.Models;
 using Microsoft.Extensions.Logging;
 
 namespace MalteseTranscriber.Infrastructure.Speechmatics;

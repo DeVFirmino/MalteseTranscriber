@@ -1,4 +1,4 @@
-namespace MalteseTranscriber.Core.Models;
+namespace MalteseTranscriber.Infrastructure.Speechmatics.Models;
 
 /// <summary>
 /// Speechmatics WebSocket protocol messages for real-time transcription.

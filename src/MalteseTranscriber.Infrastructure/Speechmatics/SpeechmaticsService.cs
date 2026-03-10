@@ -2,10 +2,12 @@ using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using MalteseTranscriber.Core.Exceptions;
 using MalteseTranscriber.Core.Interfaces;
-using MalteseTranscriber.Core.Models;
-using Microsoft.Extensions.Configuration;
+using MalteseTranscriber.Core.Options;
+using MalteseTranscriber.Infrastructure.Speechmatics.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace MalteseTranscriber.Infrastructure.Speechmatics;
 
@@ -15,35 +17,33 @@ namespace MalteseTranscriber.Infrastructure.Speechmatics;
 /// </summary>
 public class SpeechmaticsService : IStreamingTranscriptionService, IDisposable
 {
-    private readonly IConfiguration _config;
+    private readonly SpeechmaticsOptions _options;
     private readonly ILogger<SpeechmaticsService> _logger;
     private readonly SpeechmaticsMessageHandler _messageHandler;
     private readonly ConcurrentDictionary<string, SpeechmaticsConnection> _connections = new();
-
-    private const string Endpoint = "wss://eu.rt.speechmatics.com/v2";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
 
-    public SpeechmaticsService(IConfiguration config, ILogger<SpeechmaticsService> logger)
+    public SpeechmaticsService(IOptions<SpeechmaticsOptions> options, ILogger<SpeechmaticsService> logger)
     {
-        _config = config;
+        _options = options.Value;
         _logger = logger;
         _messageHandler = new SpeechmaticsMessageHandler(logger, JsonOptions);
     }
 
     public async Task ConnectAsync(string sessionId, Func<string, string, Task> onTranscript)
     {
-        var apiKey = _config["SPEECHMATICS_API_KEY"]
-            ?? throw new InvalidOperationException("SPEECHMATICS_API_KEY not configured");
+        if (_connections.Count >= _options.MaxConcurrentSessions)
+            throw new MaxConcurrentSessionsException(_options.MaxConcurrentSessions);
 
         var ws = new ClientWebSocket();
-        ws.Options.SetRequestHeader("Authorization", $"Bearer {apiKey}");
+        ws.Options.SetRequestHeader("Authorization", $"Bearer {_options.ApiKey}");
 
         _logger.LogInformation("Connecting to Speechmatics for session {SessionId}", sessionId);
-        await ws.ConnectAsync(new Uri(Endpoint), CancellationToken.None);
+        await ws.ConnectAsync(new Uri(_options.Endpoint), CancellationToken.None);
 
         // Send StartRecognition with Maltese config
         await SendJsonAsync(ws, new StartRecognitionMessage());
@@ -53,7 +53,7 @@ public class SpeechmaticsService : IStreamingTranscriptionService, IDisposable
         if (response?.Message != "RecognitionStarted")
         {
             ws.Dispose();
-            throw new InvalidOperationException(
+            throw new TranscriptionConnectionException(
                 $"Speechmatics: expected RecognitionStarted, got '{response?.Message}'");
         }
 
@@ -110,7 +110,7 @@ public class SpeechmaticsService : IStreamingTranscriptionService, IDisposable
                 await SendJsonAsync(conn.WebSocket, endMsg);
 
                 // Allow time for final transcripts before closing
-                await Task.Delay(2000);
+                await Task.Delay(_options.DisconnectDelayMs);
             }
 
             await conn.CancellationSource.CancelAsync();
