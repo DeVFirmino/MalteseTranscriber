@@ -28,7 +28,7 @@ Key decisions:
 - AAA pattern: `// Arrange` / `// Act` / `// Assert`
 - Test folders mirror project: `tests/.../Validators/`, `tests/.../Infrastructure/`, `tests/.../API/`
 - Use TDD where appropriate
-- Currently 49 tests passing
+- Currently 45 tests passing
 
 ## Commands
 - Backend: `cd src/MalteseTranscriber.API && dotnet run` (port 5001)

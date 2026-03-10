@@ -1,6 +1,6 @@
 using MalteseTranscriber.Core.Interfaces;
 
-namespace MalteseTranscriber.Infrastructure;
+namespace MalteseTranscriber.Infrastructure.Fakes;
 
 public class FakeWhisperService : IWhisperService
 {

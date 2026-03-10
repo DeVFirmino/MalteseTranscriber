@@ -1,7 +1,7 @@
 using MalteseTranscriber.Core.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace MalteseTranscriber.Infrastructure;
+namespace MalteseTranscriber.Infrastructure.Fakes;
 
 /// <summary>
 /// Fake streaming transcription for Development mode.

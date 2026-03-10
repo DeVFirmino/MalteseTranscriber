@@ -1,5 +1,5 @@
 using FluentAssertions;
-using MalteseTranscriber.Infrastructure;
+using MalteseTranscriber.Infrastructure.Fakes;
 
 namespace MalteseTranscriber.Tests.Infrastructure;
 
