@@ -1,9 +1,11 @@
 using FluentAssertions;
 using MalteseTranscriber.Core.Interfaces;
 using MalteseTranscriber.Core.Models;
-using MalteseTranscriber.Infrastructure;
+using MalteseTranscriber.Core.Options;
+using MalteseTranscriber.Infrastructure.Pipeline;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace MalteseTranscriber.Tests.Infrastructure;
@@ -19,7 +21,8 @@ public class TranscriptionPipelineTests
 
     public TranscriptionPipelineTests()
     {
-        _pipeline = new TranscriptionPipeline(_transcription, _translator, _notifier, _cache, _logger);
+        var sessionOptions = Options.Create(new SessionOptions());
+        _pipeline = new TranscriptionPipeline(_transcription, _translator, _notifier, _cache, _logger, sessionOptions);
     }
 
     [Fact]

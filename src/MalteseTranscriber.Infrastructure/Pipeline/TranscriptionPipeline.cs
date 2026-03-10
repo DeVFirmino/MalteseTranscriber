@@ -1,9 +1,12 @@
+using System.Collections.Concurrent;
 using MalteseTranscriber.Core.Interfaces;
 using MalteseTranscriber.Core.Models;
+using MalteseTranscriber.Core.Options;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
-namespace MalteseTranscriber.Infrastructure;
+namespace MalteseTranscriber.Infrastructure.Pipeline;
 
 public class TranscriptionPipeline : ITranscriptionPipeline
 {
@@ -12,24 +15,28 @@ public class TranscriptionPipeline : ITranscriptionPipeline
     private readonly ITranscriptionNotifier _notifier;
     private readonly IMemoryCache _cache;
     private readonly ILogger<TranscriptionPipeline> _logger;
+    private readonly SessionOptions _sessionOptions;
 
     /// <summary>
     /// Tracks latest chunk index per session for notification ordering.
+    /// ConcurrentDictionary required because Speechmatics callbacks arrive on background threads.
     /// </summary>
-    private readonly Dictionary<string, int> _chunkIndex = new();
+    private readonly ConcurrentDictionary<string, int> _chunkIndex = new();
 
     public TranscriptionPipeline(
         IStreamingTranscriptionService transcription,
         ITranslationService translator,
         ITranscriptionNotifier notifier,
         IMemoryCache cache,
-        ILogger<TranscriptionPipeline> logger)
+        ILogger<TranscriptionPipeline> logger,
+        IOptions<SessionOptions> sessionOptions)
     {
         _transcription = transcription;
         _translator = translator;
         _notifier = notifier;
         _cache = cache;
         _logger = logger;
+        _sessionOptions = sessionOptions.Value;
     }
 
     public async Task InitializeSessionAsync(string sessionId, string connectionId)
@@ -39,7 +46,7 @@ public class TranscriptionPipeline : ITranscriptionPipeline
             SessionId = sessionId,
             ConnectionId = connectionId
         };
-        _cache.Set($"session:{sessionId}", session, TimeSpan.FromHours(2));
+        _cache.Set($"session:{sessionId}", session, TimeSpan.FromHours(_sessionOptions.TtlHours));
         _chunkIndex[sessionId] = 0;
 
         // Open persistent WebSocket to Speechmatics for this session
@@ -92,12 +99,14 @@ public class TranscriptionPipeline : ITranscriptionPipeline
     {
         await _transcription.DisconnectAsync(sessionId);
         _cache.Remove($"session:{sessionId}");
-        _chunkIndex.Remove(sessionId);
+        _chunkIndex.TryRemove(sessionId, out _);
         _logger.LogInformation("Session finalized: {SessionId}", sessionId);
     }
 
     public Task CleanupConnectionAsync(string connectionId)
     {
+        // SignalR calls this on disconnect. Sessions are finalized via EndSession hub method.
+        // If a client disconnects without calling EndSession, the session TTL handles cleanup.
         return Task.CompletedTask;
     }
 }
