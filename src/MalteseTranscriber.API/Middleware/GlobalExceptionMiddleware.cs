@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using MalteseTranscriber.Core.Exceptions;
 
 namespace MalteseTranscriber.API.Middleware;
 
@@ -35,13 +36,16 @@ public class GlobalExceptionMiddleware
     {
         var (statusCode, errorType) = ex switch
         {
-            ArgumentException => (HttpStatusCode.BadRequest, "validation_error"),
-            UnauthorizedAccessException => (HttpStatusCode.Unauthorized, "unauthorized"),
-            InvalidOperationException => (HttpStatusCode.Conflict, "invalid_operation"),
-            TimeoutException => (HttpStatusCode.GatewayTimeout, "timeout"),
+            SessionNotFoundException        => (HttpStatusCode.NotFound,           "session_not_found"),
+            MaxConcurrentSessionsException  => (HttpStatusCode.ServiceUnavailable, "max_sessions_reached"),
+            TranscriptionConnectionException => (HttpStatusCode.BadGateway,        "transcription_error"),
+            ArgumentException               => (HttpStatusCode.BadRequest,         "validation_error"),
+            UnauthorizedAccessException     => (HttpStatusCode.Unauthorized,       "unauthorized"),
+            InvalidOperationException       => (HttpStatusCode.Conflict,           "invalid_operation"),
+            TimeoutException                => (HttpStatusCode.GatewayTimeout,     "timeout"),
             HttpRequestException httpEx when httpEx.StatusCode == HttpStatusCode.TooManyRequests
-                => (HttpStatusCode.TooManyRequests, "rate_limited"),
-            _ => (HttpStatusCode.InternalServerError, "internal_error")
+                                            => (HttpStatusCode.TooManyRequests,    "rate_limited"),
+            _                               => (HttpStatusCode.InternalServerError, "internal_error")
         };
 
         _logger.LogError(ex,
