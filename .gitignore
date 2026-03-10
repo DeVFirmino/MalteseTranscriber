@@ -411,6 +411,10 @@ FodyWeavers.xsd
 *.sln.iml
 .idea/
 
+# Qodana results
+qodana-results/
+.qodana/
+
 ##
 ## Visual studio for Mac
 ##

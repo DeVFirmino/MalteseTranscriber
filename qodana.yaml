@@ -1,0 +1,20 @@
+version: "1.0"
+linter: jetbrains/qodana-dotnet:latest
+projectDir: .
+ide: QDNET
+
+profile:
+  name: qodana.recommended
+
+include:
+  - name: CheckDependencyLicenses
+  - name: VulnerableLibrariesGlobal
+
+exclude:
+  - name: All
+    paths:
+      - frontend/
+      - tests/
+
+results:
+  - path: qodana-results/backend
