@@ -1,0 +1,164 @@
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 43 27% 96%;
+    --foreground: 0 0% 10%;
+    --card: 43 20% 94%;
+    --card-foreground: 0 0% 10%;
+    --popover: 43 27% 96%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 355 85% 41%;
+    --primary-foreground: 43 27% 96%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 43 27% 96%;
+    --muted: 40 10% 90%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 355 85% 41%;
+    --accent-foreground: 43 27% 96%;
+    --destructive: 355 85% 41%;
+    --destructive-foreground: 43 27% 96%;
+    --border: 0 0% 10%;
+    --input: 0 0% 80%;
+    --ring: 355 85% 41%;
+    --radius: 1rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    --limestone: 43 27% 96%;
+    --iron-ink: 0 0% 10%;
+    --crimson: 355 85% 41%;
+    --crimson-glow: 355 85% 41% / 0.15;
+    --sand-shadow: 43 20% 88%;
+  }
+
+  .dark {
+    --background: 0 0% 7%;
+    --foreground: 43 27% 96%;
+    --card: 0 0% 10%;
+    --card-foreground: 43 27% 96%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 43 27% 96%;
+    --primary: 355 85% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 43 27% 96%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 355 85% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 0 0% 25%;
+    --input: 0 0% 25%;
+    --ring: 355 85% 50%;
+    --sidebar-background: 0 0% 7%;
+    --sidebar-foreground: 43 27% 96%;
+    --sidebar-primary: 355 85% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 43 27% 96%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 355 85% 50%;
+    --sand-shadow: 0 0% 12%;
+  }
+}
+
+@layer base {
+  html {
+    min-height: 100%;
+    scroll-behavior: smooth;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    min-height: 100vh;
+    background-color: hsl(var(--background));
+    font-family: "IBM Plex Sans", sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Barlow Condensed", sans-serif;
+    letter-spacing: 0;
+  }
+
+  a {
+    @apply transition-colors;
+  }
+
+  button:focus-visible,
+  a:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+.font-transcript {
+  font-family: "Cormorant Garamond", serif;
+}
+
+@keyframes waveform-rise {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.animate-waveform-rise {
+  transform-origin: bottom;
+  animation: waveform-rise 1.2s ease-in-out infinite;
+}
+
+@keyframes highlight-flash {
+  0% {
+    background-color: hsl(355 85% 41% / 0.22);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-highlight {
+  animation: highlight-flash 0.8s ease-out forwards;
+}
+
+@keyframes cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.animate-cursor-blink {
+  animation: cursor-blink 1s step-end infinite;
+}

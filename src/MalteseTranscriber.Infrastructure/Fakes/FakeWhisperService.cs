@@ -1,6 +1,6 @@
 using MalteseTranscriber.Core.Interfaces;
 
-namespace MalteseTranscriber.Infrastructure;
+namespace MalteseTranscriber.Infrastructure.Fakes;
 
 public class FakeWhisperService : IWhisperService
 {
@@ -15,7 +15,7 @@ public class FakeWhisperService : IWhisperService
 
     private int _index = 0;
 
-    public async Task<string> TranscribeAsync(byte[] wavBytes, string language = "mt")
+    public async Task<string> TranscribeAsync(byte[] wavBytes)
     {
         await Task.Delay(800); // simulate real API latency
         return Phrases[_index++ % Phrases.Length];

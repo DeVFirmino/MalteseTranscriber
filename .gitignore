@@ -5,6 +5,13 @@
 
 # dotenv files
 .env
+frontend/.env
+
+# Claude Code session directory
+.claude/
+
+# Serilog log files
+logs/
 
 # User-specific files
 *.rsuser

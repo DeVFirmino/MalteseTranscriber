@@ -1,36 +1,39 @@
 using MalteseTranscriber.Core.Interfaces;
+using MalteseTranscriber.Core.Options;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
 
-namespace MalteseTranscriber.Infrastructure;
+namespace MalteseTranscriber.Infrastructure.Translation;
 
 public class TranslationService : ITranslationService
 {
     private readonly HttpClient _http;
     private readonly IMemoryCache _cache;
+    private readonly TranslationOptions _options;
 
-    public TranslationService(HttpClient http, IMemoryCache cache)
+    public TranslationService(HttpClient http, IMemoryCache cache, IOptions<TranslationOptions> options)
     {
         _http = http;
         _cache = cache;
+        _options = options.Value;
     }
 
     public async Task<string> TranslateAsync(string malteseText, string sessionId)
     {
-        // Keep last 5 phrases as context so translation stays coherent
         var history = _cache.GetOrCreate($"ctx:{sessionId}", e =>
         {
             e.SlidingExpiration = TimeSpan.FromHours(1);
             return new Queue<string>();
         })!;
 
-        var context = string.Join(" | ", history.TakeLast(5));
+        var context = string.Join(" | ", history.TakeLast(_options.ContextWindowSize));
 
         var body = new
         {
-            model = "gpt-4o",
-            max_tokens = 300,
+            model = _options.Model,
+            max_tokens = _options.MaxTokens,
             messages = new[]
             {
                 new
@@ -49,7 +52,7 @@ public class TranslationService : ITranslationService
         };
 
         var response = await _http.PostAsync(
-            "https://api.openai.com/v1/chat/completions",
+            _options.BaseUrl,
             new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
 
         response.EnsureSuccessStatusCode();
@@ -61,9 +64,10 @@ public class TranslationService : ITranslationService
             .GetProperty("content")
             .GetString() ?? string.Empty;
 
-        // Update context
         history.Enqueue(malteseText);
-        if (history.Count > 10) history.Dequeue();
+        if (history.Count > _options.ContextWindowSize)
+            history.Dequeue();
+
         _cache.Set($"ctx:{sessionId}", history, TimeSpan.FromHours(1));
 
         return translation.Trim();

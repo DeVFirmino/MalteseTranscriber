@@ -1,4 +1,4 @@
-namespace MalteseTranscriber.Infrastructure;
+namespace MalteseTranscriber.Infrastructure.Whisper;
 
 public static class AudioConverter
 {
