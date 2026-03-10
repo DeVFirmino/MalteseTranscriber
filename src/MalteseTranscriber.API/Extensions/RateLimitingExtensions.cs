@@ -1,7 +1,7 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 
-namespace MalteseTranscriber.API.Middleware;
+namespace MalteseTranscriber.API.Extensions;
 
 public static class RateLimitingExtensions
 {
